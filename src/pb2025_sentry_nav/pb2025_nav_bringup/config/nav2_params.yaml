@@ -182,7 +182,7 @@ pointcloud_to_laserscan:
   ros__parameters:
     use_sim_time: false
     target_frame: base_footprint
-    min_height: -0.5
+    min_height: -10
     max_height: 6.0
     min_intensity: 0.1
     max_intensity: 2.0
@@ -442,7 +442,7 @@ controller_server:
 
       plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"
       translation_kp: 2.0
-      translation_ki: 0.1
+      translation_ki: 0.4
       translation_kd: 0.3
       enable_rotation: false
       rotation_kp: 3.0
@@ -460,8 +460,8 @@ controller_server:
       use_rotate_to_heading_treshold: 0.1
       min_approach_linear_velocity: 0.5
       approach_velocity_scaling_dist: 1.0
-      v_linear_min: -1.5
-      v_linear_max: 1.5
+      v_linear_min: -2.0
+      v_linear_max: 2.0
       v_angular_min: -3.0
       v_angular_max: 3.0
       curvature_min: 0.4                                # 低曲率阈值，低于此值不减速。
@@ -478,7 +478,9 @@ local_costmap:
       update_frequency: 10.0
       publish_frequency: 5.0
       global_frame: odom
+      # global_frame: map
       robot_base_frame: gimbal_yaw_fake
+      # robot_base_frame: base_footprint
       rolling_window: true
       width: 5
       height: 5
@@ -509,8 +511,8 @@ local_costmap:
           data_type: PointCloud2
           # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
           # It doesn't need to start with '/'
-          topic: <robot_namespace>/terrain_map
-          # topic: red_standard_robot1/terrain_map
+          # topic: <robot_namespace>/terrain_map
+          topic: red_standard_robot1/terrain_map
           min_obstacle_height: -0.5
           max_obstacle_height: 5.0
           obstacle_max_range: 5.0

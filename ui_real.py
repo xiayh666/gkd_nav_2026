@@ -9,9 +9,12 @@ DEBUG = False
 
 root = tk.Tk()
 root.title("导航")
-root.geometry("400x400")
+root.geometry("400x450") 
 
-options = sorted(list({f.split(".")[0] for f in os.listdir("install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/reality/")}))
+try:
+    options = sorted(list({f.split(".")[0] for f in os.listdir("install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/reality/")}))
+except FileNotFoundError:
+    options = ["default_map"]
 
 selected_option = tk.StringVar(value=options[0])
 
@@ -23,17 +26,27 @@ filename_input = tk.Entry(root, width=10)
 navigate_button = tk.Button(root, text="导航", width=8)
 navigate_pos_input = tk.Entry(root, width=10)
 
+hp_button = tk.Button(root, text="发送血量", width=8)
+hp_input = tk.Entry(root, width=10)
+# hp_input.insert(0, "100")
+
 
 world = ttk.Combobox(root, textvariable=selected_option, values=options, state="readonly", width=10)
 
 run_button.grid(row=0, column=0, padx=5, pady=10)
 world.grid(row=0, column=1, padx=5, pady=10)
+
 mapping_button.grid(row=1, column=0, padx=5, pady=10)
+
 save_button.grid(row=2, column=0, padx=5, pady=10)
 filename_input.grid(row=2, column=1, padx=5, pady=10)
 
 navigate_button.grid(row=3, column=0, padx=5, pady=10)
 navigate_pos_input.grid(row=3, column=1, padx=5, pady=10)
+
+hp_button.grid(row=4, column=0, padx=5, pady=10)
+hp_input.grid(row=4, column=1, padx=5, pady=10)
+
 
 def on_navigate():
     def split(str):
@@ -44,16 +57,12 @@ def on_navigate():
 
 def on_run():
     selected_world = f"{selected_option.get()}"
-    # os.system("ros2 launch rmu_gazebo_simulator bringup_sim.launch.py &")
-    # os.system(f"ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py world:={selected_world} slam:=False use_sim_time:=False use_robot_state_pub:=True &")
     os.system(f"ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
 world:={selected_world} \
 slam:=False \
 use_robot_state_pub:=True")
 
 def on_mapping():
-    # os.system("ros2 launch rmu_gazebo_simulator bringup_sim.launch.py &")
-    # os.system("ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py slam:=True use_robot_state_pub:=True &")
     os.system("ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
 slam:=True \
 use_robot_state_pub:=True &")
@@ -70,14 +79,25 @@ def on_save():
     os.system(f"mv {filename}.pgm src/pb2025_sentry_nav/pb2025_nav_bringup/map/reality/{filename}.pgm")
     os.system(f"mv {filename}.yaml src/pb2025_sentry_nav/pb2025_nav_bringup/map/reality/{filename}.yaml")
     os.system(f"cp src/pb2025_sentry_nav/point_lio/PCD/scans.pcd src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/reality/{filename}.pcd")
-    # os.system(f"cp src/pb2025_sentry_nav/point_lio/PCD/scans.pcd {filename}.pcd")
     messagebox.showinfo("成功", "地图保存成功")
+
+def on_publish_hp():
+    hp_value = hp_input.get().strip()
+    
+    if not hp_value.isdigit() and not (hp_value.startswith('-') and hp_value[1:].isdigit()):
+        messagebox.showerror("错误", "请输入有效的数字血量！")
+        return
+
+    topic_name = "/robot_hp" 
+    cmd = f'ros2 topic pub --once {topic_name} std_msgs/msg/Int32 "{{data: {hp_value}}}"'
+    
+    os.system(cmd)
 
 
 run_button.config(command=on_run)
 mapping_button.config(command=on_mapping)
 save_button.config(command=on_save)
-
 navigate_button.config(command=on_navigate)
+hp_button.config(command=on_publish_hp)
 
 root.mainloop()

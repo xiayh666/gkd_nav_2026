@@ -3,7 +3,7 @@
 #include <iostream>
 using namespace std;
 
-
+/*
 double curyaw;
 double inityaw = 10;
 
@@ -34,3 +34,6 @@ double getDeltaYaw()
 {
     return curyaw - inityaw;
 }
+    */
+
+

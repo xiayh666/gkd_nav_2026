@@ -8,8 +8,11 @@
 #include <iostream>
 #include <iomanip>
 #include "control.h"
+#include "protocal.h"
+#include "socket_server.hpp"
 #include <atomic>
 #include <unistd.h>
+#include <std_msgs/msg/int32.hpp>
 
 using namespace std::chrono_literals;
 
@@ -38,8 +41,25 @@ public:
         latest_msg_ = nullptr;
         latest_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME); // 无效时间
 
+        hp_publisher_ = rclcpp::Node::create_publisher<std_msgs::msg::Int32>("robot_hp", 10);
+
+        /*
+        hp_timer_ = rclcpp::Node::create_wall_timer(
+            1s,
+            [this]() {
+                RCLCPP_INFO(this->get_logger(), "发布血量更新: 100");
+                std_msgs::msg::Int32 msg;
+                msg.data = 20;
+                hp_publisher_->publish(msg);
+            }
+        );
+        */
+
+
         // 启动输出线程
         output_thread_ = std::thread(&CmdVelSubscriber::output_task, this);
+
+
     }
 
     ~CmdVelSubscriber()
@@ -80,7 +100,7 @@ private:
             }
 
             if (!local_msg) {
-                std::cout << "0";
+                sendControlXY(0, 0);
             } else {
                 // std::cout << "Received cmd_vel:\n"
                 //           << "  linear.x:  " << std::fixed << std::setprecision(3) << local_msg->linear.x << "\n"
@@ -108,6 +128,9 @@ private:
     // 共享状态（受 mutex 保护）
     std::shared_ptr<geometry_msgs::msg::Twist> latest_msg_;
     rclcpp::Time latest_time_;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr hp_publisher_;
+    rclcpp::TimerBase::SharedPtr hp_timer_;
+
 };
 
 void handle_sigint(int signum)
