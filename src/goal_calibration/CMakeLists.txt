@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(nav_commander)
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS on)
-set(CMAKE_CXX_STANDARD 17)
+project(goal_calibration)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -13,23 +10,13 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 
-add_executable(nav_commander src/nav_commander.cpp)
-target_include_directories(nav_commander PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
-target_compile_features(nav_commander PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-ament_target_dependencies(
-  nav_commander
-  "rclcpp"
-  "rclcpp_action"
-  "geometry_msgs"
-  "nav2_msgs"
-)
 
-install(TARGETS nav_commander
-  DESTINATION lib/${PROJECT_NAME})
+add_executable(goal_calibration src/goal_calibrate.cpp)
+
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -42,5 +29,19 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+ament_target_dependencies(goal_calibration
+  rclcpp
+  rclcpp_action
+  geometry_msgs
+  nav_msgs
+  nav2_msgs
+)
+
+
+install(TARGETS
+ goal_calibration
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 ament_package()

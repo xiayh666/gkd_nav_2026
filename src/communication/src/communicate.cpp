@@ -3,7 +3,12 @@
 #include "socket_server.hpp"
 #include <cstdlib>
 #include <memory>
+#include <rclcpp/logger.hpp>
 #include <rclcpp/logging.hpp>
+#include <std_msgs/msg/detail/int32__struct.hpp>
+
+
+bool is_dead = false;
 
 std::atomic<bool> CmdVelSubscriber::stop_requested_ = false;
 std::atomic<bool> CmdVelSubscriber::auto_aim_captured_ =   false;
@@ -12,13 +17,58 @@ std::shared_ptr<CmdVelSubscriber>
     CmdVelSubscriber::cmd_vel_subscriber_instance_ = nullptr;
 
 CmdVelSubscriber::CmdVelSubscriber() : Node("cmd_vel_subscriber") {
+
+  hp_publisher_ =
+      rclcpp::Node::create_publisher<std_msgs::msg::Int32>("robot_hp", 10);
+
+
+
+
   ser_ = std::make_shared<SocketServer<
-      ReceiveNavigationInfo>>(11456, [this](const ReceiveNavigationInfo &info) {
-    RCLCPP_INFO(
-        rclcpp::get_logger("socket_server"),
-        "Received from UDP: yaw=%.2f, hp=%.2f, start=%d, auto_aim_captured=%d",
-        info.yaw, info.hp, info.start, info.auto_aim_captured);
+    ReceiveNavigationInfo>>(11456, [this](const ReceiveNavigationInfo &info) {
+    // RCLCPP_INFO(
+    //     rclcpp::get_logger("socket_server"),
+    //     "Received from UDP: yaw=%.2f, hp=%.2f, start=%d, auto_aim_captured=%d",
+    //     info.yaw, info.hp, info.start, info.auto_aim_captured);
+
     auto_aim_captured_ = info.auto_aim_captured;
+    int hp = info.hp;
+
+    auto hp_msg = std_msgs::msg::Int32();
+
+    hp_msg.data = int(hp);
+
+
+    if (hp_publisher_)
+    {
+      hp_publisher_->publish(hp_msg);
+    }
+
+    if (hp <= 0)
+    {
+      RCLCPP_INFO(this->get_logger(), "hp <= 0, is_dead = true"); 
+      is_dead = true;
+    } else if (is_dead){
+
+      is_dead = false;
+      respawn_init_ = true;
+      RCLCPP_INFO(this->get_logger(), "reset is_dead to false");
+      respawn_timer_ = this->create_wall_timer(5.5s, [this]() {
+        if (respawn_timer_)
+        {
+          respawn_timer_->cancel();
+        }
+
+        respawn_init_ = false;
+        RCLCPP_INFO(this->get_logger(), "reset respawn_init_ to false");
+
+      });
+
+
+    }
+
+
+
   });
 
   subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
@@ -39,8 +89,6 @@ CmdVelSubscriber::CmdVelSubscriber() : Node("cmd_vel_subscriber") {
   latest_msg_ = nullptr;
   latest_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME); // 无效时间
 
-  hp_publisher_ =
-      rclcpp::Node::create_publisher<std_msgs::msg::Int32>("robot_hp", 10);
 
   send_control_thread_ =
       std::thread(&CmdVelSubscriber::send_control_task, this);
@@ -98,7 +146,7 @@ void CmdVelSubscriber::check_map_callback(
 void CmdVelSubscriber::check_zero() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (latest_time_.nanoseconds() == 0) {
-    return; // 从未收到消息
+    return;
   }
   rclcpp::Duration diff = this->now() - latest_time_;
   if (diff.seconds() > 0.3) {
@@ -110,22 +158,30 @@ void CmdVelSubscriber::send_control(double x, double y) {
   // pkg.initialised = initialised;
 
   if (!cmd_vel_subscriber_instance_) {
-
+    std::cout << "cmd_vel_subscriver_instane_ = nullptr" << std::endl;
   } else {
     SendNavigationInfo pkg{};
     pkg.header = 0x37;
     pkg.vx = x;
     pkg.vy = y;
-    pkg.wz = 0;
-    if (CmdVelSubscriber::get_instance()->initialised_)
+    if ((CmdVelSubscriber::get_instance()->initialised_ || true) && !get_instance()->respawn_init_)
     {
-      pkg.robot_mode =   CmdVelSubscriber::auto_aim_captured_? ROBOT_FOLLOW_GIMBAL : ROBOT_SEARCH;
+      pkg.enable_rotate = 1;
+	    pkg.robot_mode =   CmdVelSubscriber::auto_aim_captured_? ROBOT_FOLLOW_GIMBAL : ROBOT_SEARCH;
     } else {
+      pkg.enable_rotate = 0;
       pkg.robot_mode = ROBOT_FOLLOW_GIMBAL;
     }
+
+    pkg.enable_rotate = 0;
     
-    // pkg.robot_mode = ROBOT_FOLLOW_GIMBAL;
+    pkg.robot_mode = ROBOT_FOLLOW_GIMBAL;
+
+
+
+    std::cout << (pkg.robot_mode == ROBOT_FOLLOW_GIMBAL ? "FOLLOW_GIMBAL" : "SEARCH")<< std::endl;
     // pkg.robot_mode = ROBOT_SEARCH;
+
 
     pkg.enable_auto_aim = cmd_vel_subscriber_instance_->auto_aim_captured_;
     cmd_vel_subscriber_instance_->ser_->send<SendNavigationInfo>(pkg);
@@ -146,6 +202,7 @@ void CmdVelSubscriber::send_control_task() {
       send_control(0, 0);
     } else {
       send_control(local_msg->linear.y, local_msg->linear.x);
+      // send_control(0, 0);
 
       std::cout << "cmd_vel: "
                 << "(" << -local_msg->linear.y << ", " << -local_msg->linear.x

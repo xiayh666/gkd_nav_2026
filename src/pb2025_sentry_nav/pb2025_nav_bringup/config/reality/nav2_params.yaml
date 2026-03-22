@@ -615,7 +615,7 @@ planner_server:
       # max_on_approach_iterations: 1000    # 一旦在容差范围内，尝试到达目标的最大迭代次数
       # max_planning_time: 3.5              # 规划、平滑和上采样的最大时间（秒）。将根据规划后的剩余时间缩放最大平滑和上采样时间。
       # cost_travel_multiplier: 2.0         # For 2D: 应用于搜索的代价乘数，以避开高代价区域。较大的值将更精确地放置在通道的中心（如果存在非“FREE”代价势场），但计算时间稍长。为了优化速度，1.0是合理的值。合理的折衷值是2.0。0.0的值有效地禁用避开障碍物的功能，像一个简单的二进制搜索A*。
-      # motion_model_for_search: "REEDS_SHEPP"    # For Hybrid Dubin, Redds-Shepp
+      # motion_model_for_search: "OMNI"    # For Hybrid Dubin, Redds-Shepp
       # angle_quantization_bins: 64         # For Hybrid nodes: 搜索的角度桶数，对于2D节点必须为1（无角度搜索）
       # analytic_expansion_ratio: 3.5       # For Hybrid/Lattice nodes: 在搜索过程中尝试解析扩展的比例，用于最终接近。
       # analytic_expansion_max_length: 5.0  # For Hybrid/Lattice nodes: 解析扩展被认为有效的最大长度，以防止不安全的捷径（单位：米）。这应该与最小转弯半径成比例，不应小于最小半径的4-5倍。
@@ -636,8 +636,9 @@ planner_server:
       #   w_data: 0.2
       #   tolerance: 1.0e-10
       #   do_refinement: true
+
       # plugin: "nav2_navfn_planner::NavfnPlanner"
-      # tolerance: 0.5
+      # tolerance: 1.0
       # use_astar: false
       # allow_unknown: true
 

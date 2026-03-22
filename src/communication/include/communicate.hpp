@@ -14,6 +14,7 @@
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/timer.hpp>
 #include <rclcpp/utilities.hpp>
 #include <std_msgs/msg/int32.hpp>
 #include <string>
@@ -58,7 +59,10 @@ private:
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr hp_publisher_;
   std::string cmd_vel_topic_name_;
   std::atomic<bool> initialised_ = false;
+  std::atomic<bool> respawn_init_ = false;
+  rclcpp::TimerBase::SharedPtr respawn_timer_;
   static std::atomic<bool> auto_aim_captured_;
+  
 
 
 

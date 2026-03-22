@@ -28,7 +28,7 @@ struct SendNavigationInfo
     uint8_t header;
     float vx;
     float vy;
-    int wz;
+    int enable_rotate;
     // bool initialised;
 
     ROBOT_MODE robot_mode;

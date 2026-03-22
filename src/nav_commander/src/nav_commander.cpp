@@ -9,7 +9,6 @@
 #include "std_msgs/msg/int32.hpp"
 #include "std_msgs/msg/bool.hpp"
 
-// 引入 TF2 用于空间初始化自检
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
 
@@ -56,7 +55,7 @@ public:
     init_check_timer_ = this->create_wall_timer(
       1s, [this]() { this->check_initialization(); });
 
-    RCLCPP_INFO(this->get_logger(), "🔄 指挥节点已启动，正在执行系统级自检...");
+    RCLCPP_INFO(this->get_logger(), "nav_commander node launching...");
   }
 
 private:
@@ -72,6 +71,7 @@ private:
   geometry_msgs::msg::PoseStamped home_pose_;
   
   TacticalState current_state_;
+
   bool is_system_ready_;
   bool has_received_hp_;
   int current_hp_;
@@ -83,15 +83,11 @@ private:
     home_pose_.pose.position.y = 0.0;
     home_pose_.pose.orientation.w = 1.0;
 
-    // work_goal_pose_.header.frame_id = "map";
-    // work_goal_pose_.pose.position.x = 1.0;
-    // work_goal_pose_.pose.position.y = 4.8;
-    // work_goal_pose_.pose.orientation.w = 1.0;
-
     work_goal_pose_.header.frame_id = "map";
-    work_goal_pose_.pose.position.x = 1.6;
-    work_goal_pose_.pose.position.y = 3.6;
+    work_goal_pose_.pose.position.x = 3.0;
+    work_goal_pose_.pose.position.y = 0.3;
     work_goal_pose_.pose.orientation.w = 1.0;
+
   }
 
   // ==========================================
@@ -99,12 +95,8 @@ private:
   // ==========================================
   void check_initialization()
   {
-    if (is_system_ready_) return; // 如果已经就绪，直接跳过
+    if (is_system_ready_) return;
 
-    // if (!has_received_hp_) {
-    //   RCLCPP_WARN(this->get_logger(), "自检中... 未收到电控血量数据");
-    //   return;
-    // }
 
     // 检查 2: Nav2 服务器是否启动
     if (!action_client_->action_server_is_ready()) {
@@ -119,18 +111,16 @@ private:
     //   return;
     // }
 
-    // --- 所有自检通过！---
     is_system_ready_ = true;
-    init_check_timer_->cancel(); // 关闭自检定时器
+    init_check_timer_->cancel();
 
-    RCLCPP_INFO(this->get_logger(), "✅ 系统自检通过！");
+    RCLCPP_INFO(this->get_logger(), "check finished！");
 
     // 给电控发送初始化(就位)信号
     auto ready_msg = std_msgs::msg::Bool();
     ready_msg.data = true;
     ready_pub_->publish(ready_msg);
 
-    // 触发第一波战术动作
     evaluate_tactics();
   }
 
@@ -143,9 +133,8 @@ private:
     current_hp_ = msg->data;
     has_received_hp_ = true;
 
-    // 只有在系统初始化完成后，血量变化才会触发导航指令
+    evaluate_tactics();
     if (is_system_ready_) {
-      evaluate_tactics();
     }
   }
 
@@ -155,12 +144,12 @@ private:
   void evaluate_tactics()
   {
     if (current_hp_ > 50) {
-      RCLCPP_INFO(this->get_logger(), "🟢 状态更新 (HP: %d > 50) -> 下令：全速前往工作区！", current_hp_);
+      RCLCPP_INFO(this->get_logger(), "状态更新 (HP: %d > 50)", current_hp_);
       current_state_ = TacticalState::WORKING;
       send_goal(work_goal_pose_);
     } 
-    else if (current_hp_ <= 50 && current_state_ != TacticalState::RETURNING_HOME) {
-      RCLCPP_WARN(this->get_logger(), "🔴 状态更新 (HP: %d <= 50) -> 下令：放弃任务，立即回城补血！", current_hp_);
+    else if (current_hp_ <= 50) {
+      RCLCPP_WARN(this->get_logger(), "状态更新 (HP: %d <= 50)", current_hp_);
       current_state_ = TacticalState::RETURNING_HOME;
       send_goal(home_pose_);
     }
@@ -178,7 +167,7 @@ private:
       [this](const GoalHandleNav::WrappedResult & result) {
         // 简单打印结果，不干扰血量驱动的状态机
         if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
-          RCLCPP_INFO(this->get_logger(), "🏁 导航已抵达当前战术目标点。");
+          RCLCPP_INFO(this->get_logger(), "goal succeded");
         }
       };
 
