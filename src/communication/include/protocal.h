@@ -11,7 +11,8 @@ enum ROBOT_MODE
     ROBOT_FOLLOW_GIMBAL = 2,
     ROBOT_SEARCH = 3,
     ROBOT_IDLE = 4,
-    ROBOT_NOT_FOLLOW = 5
+    ROBOT_NOT_FOLLOW = 5,
+    ROBOT_INIT = 6
 };
 
 struct ReceiveNavigationInfo
@@ -21,6 +22,8 @@ struct ReceiveNavigationInfo
     float hp;
     int game_progress;
     bool auto_aim_captured;
+    int is_dead;
+
 } __attribute__((packed));
 
 struct SendNavigationInfo

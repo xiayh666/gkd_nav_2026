@@ -25,7 +25,7 @@ public:
   : Node("nav_commander"), 
     current_state_(TacticalState::PENDING),
     is_system_ready_(false),
-    current_hp_(100)
+    current_hp_(400)
   {
     goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
       "/red_standard_robot1/goal_pose_raw", 10);
@@ -65,13 +65,13 @@ private:
   void setup_poses() {
     // 这里的 frame_id 应与你的全局地图框架一致
     home_pose_.header.frame_id = "map";
-    home_pose_.pose.position.x = 0.0;
+    home_pose_.pose.position.x = -1.0;
     home_pose_.pose.position.y = 0.0;
     home_pose_.pose.orientation.w = 1.0;
 
     work_goal_pose_.header.frame_id = "map";
-    work_goal_pose_.pose.position.x = 1.5;
-    work_goal_pose_.pose.position.y = 3.0;
+    work_goal_pose_.pose.position.x = 2.0;
+    work_goal_pose_.pose.position.y = 6.7;
     work_goal_pose_.pose.orientation.w = 1.0;
   }
 
@@ -104,19 +104,26 @@ private:
   }
 
   void evaluate_tactics() {
-    if (current_hp_ > 100) {
-      // if (current_state_ != TacticalState::WORKING) {
-        RCLCPP_INFO(this->get_logger(), "Switching to WORKING mode (HP: %d)", current_hp_);
+    if (current_hp_ > 150) {
+      if (current_state_ == TacticalState::RETURNING_HOME and current_hp_ < 398) {
+        RCLCPP_INFO(this->get_logger(), "回血ing");
+        current_state_ = TacticalState::RETURNING_HOME;
+      } else {
+        RCLCPP_INFO(this->get_logger(), "回满血了");
         current_state_ = TacticalState::WORKING;
-        publish_goal_to_filter(work_goal_pose_);
-      // }
+      }
     } else {
-      // if (current_state_ != TacticalState::RETURNING_HOME) {
         RCLCPP_WARN(this->get_logger(), "Switching to HOME mode (HP: %d)", current_hp_);
         current_state_ = TacticalState::RETURNING_HOME;
-        publish_goal_to_filter(home_pose_);
-      // }
     }
+
+    if (current_state_ == TacticalState::WORKING) {
+      publish_goal_to_filter(work_goal_pose_);
+    } else if (current_state_ == TacticalState::RETURNING_HOME) {
+      publish_goal_to_filter(home_pose_);
+    }
+
+
   }
 
   void publish_goal_to_filter(geometry_msgs::msg::PoseStamped target_pose) {

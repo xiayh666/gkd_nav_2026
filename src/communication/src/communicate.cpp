@@ -1,4 +1,5 @@
 #include "communicate.hpp"
+#include "consts.hpp"
 #include "protocal.h"
 #include "socket_server.hpp"
 #include <cstdlib>
@@ -7,15 +8,20 @@
 #include <rclcpp/logging.hpp>
 #include <std_msgs/msg/detail/int32__struct.hpp>
 
-bool is_dead = false;
+
+// 临时测试用
+bool flag = true;
+bool flag_timer_created_ = false;
+
 
 std::atomic<bool> CmdVelSubscriber::stop_requested_ = false;
 std::atomic<bool> CmdVelSubscriber::auto_aim_captured_ = false;
 std::atomic<int> CmdVelSubscriber::game_progress_ = false;
+std::atomic<bool> CmdVelSubscriber::hit_to_start_ = false;
 std::atomic<bool> CmdVelSubscriber::startup_finished_ = false;
 std::atomic<bool> CmdVelSubscriber::startup_timer_created_ = false;
-
-
+std::atomic<double> CmdVelSubscriber::nav2_yaw_ = 0.0;
+bool dead = false;
 
 std::shared_ptr<CmdVelSubscriber>
     CmdVelSubscriber::cmd_vel_subscriber_instance_ = nullptr;
@@ -27,14 +33,25 @@ CmdVelSubscriber::CmdVelSubscriber() : Node("cmd_vel_subscriber") {
 
   ser_ = std::make_shared<SocketServer<ReceiveNavigationInfo>>(
       11456, [this](const ReceiveNavigationInfo &info) {
-        // RCLCPP_INFO(
-        //     rclcpp::get_logger("socket_server"),
-        //     "Received from UDP: yaw=%.2f, hp=%.2f, start=%d,
-        //     auto_aim_captured=%d", info.yaw, info.hp, info.start,
-        //     info.auto_aim_captured);
-
         auto_aim_captured_ = info.auto_aim_captured;
         int hp = info.hp;
+        int is_dead = info.is_dead;
+
+        if (hp < HP_MAX) {
+          hit_to_start_ = true;
+          // RCLCPP_INFO(rclcpp::get_logger("socket_server"),
+          //             "Received from UDP: yaw=%.2f, hp=%.2f, start=%d, "
+          //             "auto_aim_captured=%d, hit_to_start_ = %d",
+          //             info.yaw, info.hp, info.game_progress,
+          //             info.auto_aim_captured, hit_to_start_ == true);
+        }
+
+        // RCLCPP_INFO(rclcpp::get_logger("socket_server"),
+        //             "Received from UDP: yaw=%.2f, hp=%.2f, start=%d, "
+        //             "auto_aim_captured=%d, hit_to_start_ = %d",
+        //             info.yaw, info.hp, info.game_progress,
+        //             info.auto_aim_captured, hit_to_start_ == true);
+
         game_progress_ = info.game_progress;
 
         auto hp_msg = std_msgs::msg::Int32();
@@ -45,15 +62,15 @@ CmdVelSubscriber::CmdVelSubscriber() : Node("cmd_vel_subscriber") {
           hp_publisher_->publish(hp_msg);
         }
 
-        if (hp <= 0) {
-          RCLCPP_INFO(this->get_logger(), "hp <= 0, is_dead = true");
-          is_dead = true;
-        } else if (is_dead) {
-
-          is_dead = false;
+        if (is_dead) {
+          dead = true;
           respawn_init_ = true;
-          RCLCPP_INFO(this->get_logger(), "reset is_dead to false");
-          respawn_timer_ = this->create_wall_timer(10s, [this]() {
+          RCLCPP_INFO(this->get_logger(),
+                      "Received is_dead = true, set dead = true");
+        } else if (dead) {
+          dead = false;
+
+          respawn_timer_ = this->create_wall_timer(4s, [this]() {
             if (respawn_timer_) {
               respawn_timer_->cancel();
             }
@@ -73,6 +90,10 @@ CmdVelSubscriber::CmdVelSubscriber() : Node("cmd_vel_subscriber") {
       "/red_standard_robot1/map", rclcpp::QoS(1),
       std::bind(&CmdVelSubscriber::check_map_callback, this,
                 std::placeholders::_1));
+
+  odom_subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
+      "/red_standard_robot1/odometry", rclcpp::QoS(1),
+      std::bind(&CmdVelSubscriber::odom_callback, this, std::placeholders::_1));
 
   check_zero_timer_ = this->create_wall_timer(
       100ms, std::bind(&CmdVelSubscriber::check_zero, this));
@@ -133,6 +154,31 @@ void CmdVelSubscriber::check_map_callback(
   }
 }
 
+double CmdVelSubscriber::quaternion_to_yaw(double x, double y, double z,
+                                           double w) {
+  // 从四元数提取 yaw (绕 z 轴旋转)
+  // yaw = atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
+  double siny_cosp = 2.0 * (w * z + x * y);
+  double cosy_cosp = 1.0 - 2.0 * (y * y + z * z);
+  return std::atan2(siny_cosp, cosy_cosp);
+}
+
+void CmdVelSubscriber::odom_callback(
+    const nav_msgs::msg::Odometry::SharedPtr msg) {
+  // 获取 nav2 的 yaw（来自激光雷达 IMU）
+  const auto &q = msg->pose.pose.orientation;
+  double yaw = quaternion_to_yaw(q.x, q.y, q.z, q.w);
+  nav2_yaw_.store(yaw);
+
+  // 在第一次收到 odometry 时记录初始 yaw（基准方向）
+  if (!initial_yaw_recorded_) {
+    initial_yaw_ = yaw;
+    initial_yaw_recorded_ = true;
+    RCLCPP_INFO(this->get_logger(), "Initial nav2 yaw recorded: %.2f",
+                initial_yaw_);
+  }
+}
+
 void CmdVelSubscriber::check_zero() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (latest_time_.nanoseconds() == 0) {
@@ -145,8 +191,16 @@ void CmdVelSubscriber::check_zero() {
 }
 
 void CmdVelSubscriber::send_control(double x, double y) {
-  // pkg.initialised = initialised;
-  if (game_progress_ != 4 && false) {
+  if (flag_timer_created_ == false) {
+    RCLCPP_INFO(cmd_vel_subscriber_instance_->get_logger(),
+                "Creating flag reset timer");
+    flag_timer_created_ = true;
+    cmd_vel_subscriber_instance_->flag_timer_ = cmd_vel_subscriber_instance_->create_wall_timer(2s, [=]() {
+      flag = false;
+    });
+  }
+
+  if ((game_progress_ != 4 and !hit_to_start_) or game_progress_ == 5) {
     SendNavigationInfo pkg;
     pkg.vx = pkg.vy = 0;
     pkg.enable_rotate = false;
@@ -164,10 +218,21 @@ void CmdVelSubscriber::send_control(double x, double y) {
         cmd_vel_subscriber_instance_->startup();
       }
     } else {
-      std::cout << "startup msg sending..." << std::endl;
+      // 使用 yaw 的变化量来修正冲刺方向
+      double current_nav2_yaw = nav2_yaw_.load();
+      double delta_yaw = current_nav2_yaw - cmd_vel_subscriber_instance_->initial_yaw_;
+      double speed = 1.5;
+      // 沿着初始方向（世界坐标系 x 轴）冲刺，补偿 yaw 变化
+      double vy = speed * std::cos(delta_yaw);
+      double vx = -speed * std::sin(delta_yaw);
+
+      RCLCPP_INFO(rclcpp::get_logger("startup"),
+                  "Startup: initial_yaw=%.2f, current_yaw=%.2f, delta_yaw=%.2f, vx=%.2f, vy=%.2f",
+                  cmd_vel_subscriber_instance_->initial_yaw_, current_nav2_yaw, delta_yaw, vx, vy);
+
       SendNavigationInfo pkg;
-      pkg.vx = 0;
-      pkg.vy = 0.5;
+      pkg.vx = vx;
+      pkg.vy = vy;
       pkg.header = 0x37;
       pkg.enable_rotate = false;
       pkg.robot_mode = ROBOT_FOLLOW_GIMBAL;
@@ -185,8 +250,13 @@ void CmdVelSubscriber::send_control(double x, double y) {
     pkg.header = 0x37;
     pkg.vx = x;
     pkg.vy = y;
-    if ((CmdVelSubscriber::get_instance()->initialised_) &&
-        !get_instance()->respawn_init_) {
+    if (get_instance()->respawn_init_) {
+      pkg.vx = 0;
+      pkg.vy = 0;
+      pkg.enable_rotate = 0;
+      pkg.robot_mode = ROBOT_INIT;
+
+    } else if ((CmdVelSubscriber::get_instance()->initialised_)) {
       pkg.enable_rotate = 1;
       pkg.robot_mode = CmdVelSubscriber::auto_aim_captured_
                            ? ROBOT_FOLLOW_GIMBAL
@@ -229,10 +299,10 @@ void CmdVelSubscriber::send_control_task() {
       send_control(local_msg->linear.y, local_msg->linear.x);
       // send_control(0, 0);
 
-      std::cout << "cmd_vel: "
-                << "(" << local_msg->linear.y << ", " << local_msg->linear.x
-                << ", "
-                << ")" << std::endl;
+      // std::cout << "cmd_vel: "
+      //           << "(" << local_msg->linear.y << ", " << local_msg->linear.x
+      //           << ", "
+      //           << ")" << std::endl;
     }
 
     std::this_thread::sleep_for(
@@ -243,11 +313,20 @@ void CmdVelSubscriber::send_control_task() {
 }
 
 void CmdVelSubscriber::startup() {
-  startup_timer_ = this->create_wall_timer(1s, [this]() {
+  // 计算初始 yaw 与当前 nav2 yaw 的差值，用于修正冲刺方向
+  double current_nav2_yaw = nav2_yaw_.load();
+  yaw_offset_ = initial_yaw_ - current_nav2_yaw;
+  RCLCPP_INFO(
+      this->get_logger(),
+      "Startup: initial_yaw=%.2f, current_nav2_yaw=%.2f, yaw_offset=%.2f",
+      initial_yaw_, current_nav2_yaw, yaw_offset_);
+
+  startup_timer_ = this->create_wall_timer(2s, [this]() {
     startup_finished_ = true;
     startup_timer_->cancel();
 
-    RCLCPP_INFO(this->get_logger(), "startup finished, startup_timer cancelled");
+    RCLCPP_INFO(this->get_logger(),
+                "startup finished, startup_timer cancelled");
   });
   startup_timer_created_ = true;
 }
