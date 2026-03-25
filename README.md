@@ -18,6 +18,9 @@
 | **`ui_real.py`** | 功能选择ui界面的脚本 |
 | **`connect_lidar.sh`** | 激光雷达相关配置脚本 |
 | **`communication.zsh`** | 用于打开导航&电控通讯节点的脚本 |
+| **`check_odometry.zsh`** | 用于查看当前 odometry 话题的内容 |
+| **`goal_calibration.zsh`** | 启动目标点校验的脚本 |
+| **`nav_commander.zsh`** | 启动决策节点的脚本 |
 | **`launch.zsh`** | 启动脚本 |
 
 ---
